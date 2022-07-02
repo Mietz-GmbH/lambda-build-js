@@ -12,7 +12,7 @@ function usage() {
     process.exit(1);
 }
 
-const rootDir = resolve(__dirname, '../../')
+const rootDir = resolve(__dirname, '../../../')
 const functionsDir = resolve (rootDir, 'src/functions')
 
 function handleCompilation(fileSystem, functionName, metadata) {

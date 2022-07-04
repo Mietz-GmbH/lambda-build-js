@@ -57,6 +57,9 @@ async function buildFunction(functionName, logging, watch) {
                 {
                     test: /\.(js|ts)$/,
                     loader: 'babel-loader',
+                    options: {
+                        presets: ['@babel/preset-typescript']
+                    }
                 },
             ],
         },

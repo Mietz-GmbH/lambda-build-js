@@ -12,7 +12,7 @@ yarn install @mietz-gmbh/lambda-build-js
 ## Build Lambda
 
 ```bash
-yarn yarn build-lambda [function_name] [--logging] [--watch]
+yarn build-lambda [function_name] [--logging] [--watch]
 ```
 
 # Configuration

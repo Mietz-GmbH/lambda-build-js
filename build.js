@@ -13,10 +13,29 @@ function usage() {
 }
 
 const rootDir = resolve(__dirname, '../../../')
-const functionsDir = resolve (rootDir, 'src/functions')
+const functionsDir = resolve(rootDir, 'src/functions')
+
+const defaultBuildConfig = {
+    alias: {},
+    externals: []
+}
+
+let buildConfig
+
+try {
+    buildConfig = {
+        ...defaultBuildConfig,
+        ...require(resolve(rootDir, "lambda-build.config.js"))
+    };
+
+} catch (error) {
+    console.log('Cannot find "lambda-build.config.js"! Using default config.')
+    buildConfig = defaultBuildConfig;
+}
 
 function handleCompilation(fileSystem, functionName, metadata) {
-    const functionCode = fileSystem.readFileSync('/function.js');
+    const startTime = performance.now()
+    const functionCode = fileSystem.readFileSync(`/${functionName}.js`);
 
     const outputDirectory = resolve(rootDir, 'dist');
     try {
@@ -29,25 +48,27 @@ function handleCompilation(fileSystem, functionName, metadata) {
     zipFile.end();
 
     writeFileSync(resolve(outputDirectory, `${functionName}.json`), JSON.stringify(metadata));
+    const endTime = performance.now()
+    console.log(`Compressed "${functionName}" in ${Math.floor(endTime - startTime)}ms`);
 }
 
-async function buildFunction(functionName, logging, watch) {
-    const metadataFile = resolve(functionsDir, `${functionName}.json`);
-    const metadata = require(metadataFile);
+async function buildFunctions(functionNames, logging, watch) {
+    const entry = {};
+    functionNames.forEach((functionName) => {
+        entry[functionName] = resolve(functionsDir, functionName);
+    });
 
     const compiler = webpack({
         mode: 'production',
-        entry: resolve(functionsDir, `${functionName}`),
+        entry,
         output: {
             path: '/',
-            filename: `function.js`,
+            filename: `[name].js`,
             libraryTarget: 'commonjs',
         },
         resolve: {
             extensions: ['.ts', '.js'],
-            alias: {
-                pg: resolve(__dirname, 'pg.js'),
-            },
+            alias: buildConfig.alias,
         },
         node: {
             __dirname: false,
@@ -57,6 +78,7 @@ async function buildFunction(functionName, logging, watch) {
                 {
                     test: /\.(js|ts)$/,
                     loader: 'babel-loader',
+                    exclude: /node_modules/,
                     options: {
                         presets: ['@babel/preset-typescript']
                     }
@@ -64,7 +86,8 @@ async function buildFunction(functionName, logging, watch) {
             ],
         },
         target: 'node',
-        externals: ['aws-sdk', ...(metadata.nodeExternals ?? [])],
+        externalsPresets: {node: true},
+        externals: buildConfig.externals,
         plugins: [
             new webpack.DefinePlugin({
                 'process.env.LOGGING': JSON.stringify(logging),
@@ -92,14 +115,24 @@ async function buildFunction(functionName, logging, watch) {
                 console.error('Failed to compile', err);
             } else {
                 console.log(stats.toString({colors: true}));
-                handleCompilation(fileSystem, functionName, JSON.parse(readFileSync(metadataFile, 'utf-8')));
+                functionNames.map(functionName => {
+                    const metadataFile = resolve(functionsDir, `${functionName}.json`);
+                    return handleCompilation(fileSystem, functionName, JSON.parse(readFileSync(metadataFile, 'utf-8')));
+                });
             }
         });
     } else {
         const stats = await new Promise(
             (resolve, reject) => compiler.run((err, stats) => err ? reject(err) : resolve(stats)));
         console.log(stats.toString({colors: true}));
-        handleCompilation(fileSystem, functionName, metadata);
+        functionNames.map(functionName => {
+            const metadataFile = resolve(functionsDir, `${functionName}.json`);
+            const metadata = require(metadataFile);
+            return handleCompilation(fileSystem, functionName, metadata);
+        })
+        compiler.close((err) => {
+            if (err) console.error(err)
+        });
     }
 }
 
@@ -123,16 +156,16 @@ async function build() {
     }
 
     if (functionName) {
-        await buildFunction(functionName, logging, watch);
+        await buildFunctions([functionName], logging, watch);
     } else {
         const functionNames = readdirSync(functionsDir)
             .filter(filename => filename.endsWith('.json'))
             .map(filename => filename.substring(0, filename.length - 5));
         console.log('Building all functions', functionNames);
-        await Promise.all(functionNames.map(functionName => buildFunction(functionName, logging, watch)));
+        await buildFunctions(functionNames, logging, watch);
     }
 }
 
 build()
-    .then(() => console.log('Complication done.'))
+    .then(() => console.log('Compilation done.'))
     .catch(reason => console.error('Could not build function(s)', reason));

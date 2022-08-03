@@ -13,7 +13,25 @@ function usage() {
 }
 
 const rootDir = resolve(__dirname, '../../../')
-const functionsDir = resolve (rootDir, 'src/functions')
+const functionsDir = resolve(rootDir, 'src/functions')
+
+const defaultBuildConfig = {
+    alias: {},
+    externals: []
+}
+
+let buildConfig
+
+try {
+    buildConfig = {
+        ...defaultBuildConfig,
+        ...require(resolve(rootDir, "lambda-build.config.js"))
+    };
+
+} catch (error) {
+    console.log('Cannot find "lambda-build.config.js"! Using default config.')
+    buildConfig = defaultBuildConfig;
+}
 
 function handleCompilation(fileSystem, functionName, metadata) {
     const startTime = performance.now()
@@ -50,9 +68,7 @@ async function buildFunctions(functionNames, logging, watch) {
         },
         resolve: {
             extensions: ['.ts', '.js'],
-            alias: {
-                pg: resolve(__dirname, 'pg.js'),
-            },
+            alias: buildConfig.alias,
         },
         node: {
             __dirname: false,
@@ -71,19 +87,7 @@ async function buildFunctions(functionNames, logging, watch) {
         },
         target: 'node',
         externalsPresets: {node: true},
-        externals: [
-            'aws-sdk',
-            'aws-lambda',
-            'aws4',
-            'firebase-admin',
-            'uuid',
-            'lodash',
-            'client-oauth2',
-            'axios',
-            'jsonwebtoken',
-            // TODO: Externalize pg without breaking alias
-            'pg',
-        ],
+        externals: buildConfig.externals,
         plugins: [
             new webpack.DefinePlugin({
                 'process.env.LOGGING': JSON.stringify(logging),
@@ -126,7 +130,9 @@ async function buildFunctions(functionNames, logging, watch) {
             const metadata = require(metadataFile);
             return handleCompilation(fileSystem, functionName, metadata);
         })
-        compiler.close((err) => { if (err) console.error(err) });
+        compiler.close((err) => {
+            if (err) console.error(err)
+        });
     }
 }
 

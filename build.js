@@ -8,7 +8,7 @@ const MemoryFileSystem = require('memory-fs');
 const {createWriteStream, writeFileSync, mkdirSync, readFileSync, readdirSync} = require('fs');
 
 function usage() {
-    console.error('Usage: node build.js [function_name] [--logging] [--watch]');
+    console.error('Usage: node build.js [function_name] [--logging] [--watch] [--loggingLevel=[debug|info|warn|error]]');
     process.exit(1);
 }
 
@@ -29,7 +29,7 @@ try {
     };
 
 } catch (error) {
-    console.log('Cannot find "lambda-build.config.js"! Using default config.')
+    console.info('Cannot find "lambda-build.config.js"! Using default config.')
     buildConfig = defaultBuildConfig;
 }
 
@@ -52,7 +52,7 @@ function handleCompilation(fileSystem, functionName, metadata) {
     console.log(`Compressed "${functionName}" in ${Math.floor(endTime - startTime)}ms`);
 }
 
-async function buildFunctions(functionNames, logging, watch) {
+async function buildFunctions(functionNames, logging, watch, loggingLevel) {
     const entry = {};
     functionNames.forEach((functionName) => {
         entry[functionName] = resolve(functionsDir, functionName);
@@ -98,7 +98,7 @@ async function buildFunctions(functionNames, logging, watch) {
                 new TerserPlugin({
                     terserOptions: {
                         compress: {
-                            drop_console: !logging,
+                            pure_funcs: resolveLoggingLevelToPureFuncs(logging ? loggingLevel : ''),
                         },
                     },
                 }),
@@ -136,18 +136,39 @@ async function buildFunctions(functionNames, logging, watch) {
     }
 }
 
+const loggingLevels = ['debug', 'info', 'warn', 'error'];
+
+const resolveLoggingLevelToPureFuncs = (loggingLevel) => {
+    switch (loggingLevel) {
+        case 'debug':
+            return [];
+        case 'info':
+            return ['console.debug', 'console.log'];
+        case 'warn':
+            return [...resolveLoggingLevelToPureFuncs('info'), 'console.info'];
+        case 'error':
+            return [...resolveLoggingLevelToPureFuncs('warn'), 'console.warn'];
+        default:
+            return [...resolveLoggingLevelToPureFuncs('error'), 'console.error'];
+    }
+}
+
+
 async function build() {
     const [, , ...args] = process.argv;
 
     let functionName;
     let logging = false;
     let watch = false;
+    let loggingLevel;
 
     for (const arg of args) {
         if (arg === '--logging') {
             logging = true;
         } else if (arg === '--watch') {
             watch = true;
+        } else if (arg.startsWith('--loggingLevel=') && loggingLevels.includes(arg.split('=')[1])) {
+            loggingLevel = arg.split('=')[1];
         } else if (!functionName) {
             functionName = arg;
         } else {
@@ -155,14 +176,23 @@ async function build() {
         }
     }
 
+    if (logging && !loggingLevel) {
+        loggingLevel = 'debug';
+        console.info('Logging level is set to "debug".');
+    } else if (!logging && loggingLevel) {
+        console.warn(`Ignoring logging level "${loggingLevel}" because logging is disabled.`);
+    } else if (logging && loggingLevel) {
+        console.info(`Logging level is set to "${loggingLevel}".`);
+    }
+
     if (functionName) {
-        await buildFunctions([functionName], logging, watch);
+        await buildFunctions([functionName], logging, watch, loggingLevel);
     } else {
         const functionNames = readdirSync(functionsDir)
             .filter(filename => filename.endsWith('.json'))
             .map(filename => filename.substring(0, filename.length - 5));
         console.log('Building all functions', functionNames);
-        await buildFunctions(functionNames, logging, watch);
+        await buildFunctions(functionNames, logging, watch, loggingLevel);
     }
 }
 

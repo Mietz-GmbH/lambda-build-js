@@ -1,6 +1,6 @@
 {
   "name": "@mietz-gmbh/lambda-build-js",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "main": "build.js",
   "bin": {
     "build-lambda": "./build.js"

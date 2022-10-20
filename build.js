@@ -8,7 +8,7 @@ const MemoryFileSystem = require('memory-fs');
 const {createWriteStream, writeFileSync, mkdirSync, readFileSync, readdirSync} = require('fs');
 
 function usage() {
-    console.error('Usage: node build.js [function_name] [--logging] [--watch] [--loggingLevel=[debug|info|warn|error]]');
+    console.error('Usage: node build.js [function_name] [--minimizeOff] [--logging] [--watch] [--loggingLevel=[debug|info|warn|error]]');
     process.exit(1);
 }
 
@@ -52,7 +52,7 @@ function handleCompilation(fileSystem, functionName, metadata) {
     console.log(`Compressed "${functionName}" in ${Math.floor(endTime - startTime)}ms`);
 }
 
-async function buildFunctions(functionNames, logging, watch, loggingLevel) {
+async function buildFunctions({functionNames, logging, watch, loggingLevel, minimize}) {
     const entry = {};
     functionNames.forEach((functionName) => {
         entry[functionName] = resolve(functionsDir, functionName);
@@ -94,6 +94,7 @@ async function buildFunctions(functionNames, logging, watch, loggingLevel) {
             }),
         ],
         optimization: {
+            minimize,
             minimizer: [
                 new TerserPlugin({
                     terserOptions: {
@@ -161,6 +162,7 @@ async function build() {
     let logging = false;
     let watch = false;
     let loggingLevel;
+    let minimize = true;
 
     for (const arg of args) {
         if (arg === '--logging') {
@@ -169,6 +171,8 @@ async function build() {
             watch = true;
         } else if (arg.startsWith('--loggingLevel=') && loggingLevels.includes(arg.split('=')[1])) {
             loggingLevel = arg.split('=')[1];
+        } else if (arg === '--minimizeOff') {
+            minimize = false;
         } else if (!functionName) {
             functionName = arg;
         } else {
@@ -186,13 +190,13 @@ async function build() {
     }
 
     if (functionName) {
-        await buildFunctions([functionName], logging, watch, loggingLevel);
+        await buildFunctions({ functionNames: [functionName], logging, watch, loggingLevel, minimize});
     } else {
         const functionNames = readdirSync(functionsDir)
             .filter(filename => filename.endsWith('.json'))
             .map(filename => filename.substring(0, filename.length - 5));
         console.log('Building all functions', functionNames);
-        await buildFunctions(functionNames, logging, watch, loggingLevel);
+        await buildFunctions({functionNames, logging, watch, loggingLevel, minimize});
     }
 }
 
